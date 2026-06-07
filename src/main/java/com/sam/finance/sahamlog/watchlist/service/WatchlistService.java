@@ -7,10 +7,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.sam.finance.sahamlog.auth.domain.AppUser;
-import com.sam.finance.sahamlog.auth.repository.AppUserRepository;
 import com.sam.finance.sahamlog.auth.service.CurrentUserService;
-import com.sam.finance.sahamlog.portfolio.domain.Stock;
 import com.sam.finance.sahamlog.portfolio.domain.StockPriceSnapshot;
 import com.sam.finance.sahamlog.portfolio.service.StockPriceService;
 import com.sam.finance.sahamlog.portfolio.service.StockService;
@@ -18,7 +15,6 @@ import com.sam.finance.sahamlog.shared.exception.BusinessRuleViolationException;
 import com.sam.finance.sahamlog.shared.exception.ConflictException;
 import com.sam.finance.sahamlog.shared.exception.ResourceNotFoundException;
 import com.sam.finance.sahamlog.watchlist.domain.WatchlistItem;
-import com.sam.finance.sahamlog.watchlist.dto.ValuationZone;
 import com.sam.finance.sahamlog.watchlist.dto.WatchlistRequest;
 import com.sam.finance.sahamlog.watchlist.dto.WatchlistResponse;
 import com.sam.finance.sahamlog.watchlist.repository.WatchlistItemRepository;
@@ -29,30 +25,28 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class WatchlistService {
 
-    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
-
     private final WatchlistItemRepository watchlistItemRepository;
-    private final AppUserRepository appUserRepository;
     private final CurrentUserService currentUserService;
     private final StockService stockService;
     private final StockPriceService stockPriceService;
+    private final WatchlistValuationPolicy watchlistValuationPolicy;
 
     @Transactional
     public WatchlistResponse create(WatchlistRequest request) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         if (watchlistItemRepository.existsByUser_IdAndStock_Id(userId, request.stockId())) {
             throw new ConflictException("Watchlist item already exists for this stock");
         }
 
         validateBands(request);
         WatchlistItem item = new WatchlistItem();
-        applyRequest(item, request, userId);
+        applyRequest(item, request);
         return toResponse(watchlistItemRepository.save(item), userId);
     }
 
     @Transactional(readOnly = true)
     public List<WatchlistResponse> findAll() {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         return watchlistItemRepository.findByUser_IdOrderByStock_CodeAsc(userId)
             .stream()
             .map(item -> toResponse(item, userId))
@@ -61,35 +55,32 @@ public class WatchlistService {
 
     @Transactional(readOnly = true)
     public WatchlistResponse findById(Long id) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         return toResponse(findOwnedItem(id, userId), userId);
     }
 
     @Transactional
     public WatchlistResponse update(Long id, WatchlistRequest request) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         validateBands(request);
         WatchlistItem item = findOwnedItem(id, userId);
         if (!item.getStock().getId().equals(request.stockId()) && watchlistItemRepository.existsByUser_IdAndStock_Id(userId, request.stockId())) {
             throw new ConflictException("Watchlist item already exists for this stock");
         }
 
-        applyRequest(item, request, userId);
+        applyRequest(item, request);
         return toResponse(watchlistItemRepository.save(item), userId);
     }
 
     @Transactional
     public void delete(Long id) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         watchlistItemRepository.delete(findOwnedItem(id, userId));
     }
 
-    private void applyRequest(WatchlistItem item, WatchlistRequest request, Long userId) {
-        AppUser user = appUserRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        Stock stock = stockService.findEntityById(request.stockId());
-        item.setUser(user);
-        item.setStock(stock);
+    private void applyRequest(WatchlistItem item, WatchlistRequest request) {
+        item.setUser(currentUserService.getCurrentAppUser());
+        item.setStock(stockService.findEntityById(request.stockId()));
         item.setFairPrice(request.fairPrice().setScale(2, RoundingMode.HALF_UP));
         item.setCheapPrice(request.cheapPrice().setScale(2, RoundingMode.HALF_UP));
         item.setVeryCheapPrice(request.veryCheapPrice().setScale(2, RoundingMode.HALF_UP));
@@ -113,13 +104,7 @@ public class WatchlistService {
     private WatchlistResponse toResponse(WatchlistItem item, Long userId) {
         StockPriceSnapshot snapshot = stockPriceService.findSnapshotMapByUserId(userId).get(item.getStock().getId());
         BigDecimal currentPrice = snapshot == null ? null : snapshot.getPrice();
-        ValuationZone zone = resolveZone(item, currentPrice);
-        BigDecimal premiumDiscount = currentPrice == null || item.getFairPrice().compareTo(BigDecimal.ZERO) == 0
-            ? BigDecimal.ZERO
-            : currentPrice.subtract(item.getFairPrice()).divide(item.getFairPrice(), 4, RoundingMode.HALF_UP).multiply(HUNDRED).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal marginOfSafety = currentPrice == null || item.getFairPrice().compareTo(BigDecimal.ZERO) == 0
-            ? BigDecimal.ZERO
-            : item.getFairPrice().subtract(currentPrice).divide(item.getFairPrice(), 4, RoundingMode.HALF_UP).multiply(HUNDRED).setScale(2, RoundingMode.HALF_UP);
+        WatchlistValuation valuation = watchlistValuationPolicy.evaluate(item, currentPrice);
 
         return new WatchlistResponse(
             item.getId(),
@@ -132,27 +117,8 @@ public class WatchlistService {
             item.getExpensivePrice(),
             item.getNotes(),
             currentPrice,
-            zone,
-            premiumDiscount,
-            marginOfSafety);
-    }
-
-    private ValuationZone resolveZone(WatchlistItem item, BigDecimal currentPrice) {
-        if (currentPrice == null) {
-            return ValuationZone.NO_PRICE;
-        }
-        if (currentPrice.compareTo(item.getVeryCheapPrice()) <= 0) {
-            return ValuationZone.VERY_CHEAP;
-        }
-        if (currentPrice.compareTo(item.getCheapPrice()) <= 0) {
-            return ValuationZone.CHEAP;
-        }
-        if (currentPrice.compareTo(item.getFairPrice()) <= 0) {
-            return ValuationZone.FAIR;
-        }
-        if (currentPrice.compareTo(item.getExpensivePrice()) <= 0) {
-            return ValuationZone.EXPENSIVE;
-        }
-        return ValuationZone.OVERPRICED;
+            valuation.zone(),
+            valuation.premiumDiscountPercentage(),
+            valuation.marginOfSafetyPercentage());
     }
 }

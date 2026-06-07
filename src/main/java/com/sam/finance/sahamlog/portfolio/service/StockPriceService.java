@@ -6,8 +6,6 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.sam.finance.sahamlog.auth.domain.AppUser;
-import com.sam.finance.sahamlog.auth.repository.AppUserRepository;
 import com.sam.finance.sahamlog.auth.service.CurrentUserService;
 import com.sam.finance.sahamlog.portfolio.domain.Stock;
 import com.sam.finance.sahamlog.portfolio.domain.StockPriceSnapshot;
@@ -23,20 +21,17 @@ import lombok.RequiredArgsConstructor;
 public class StockPriceService {
 
     private final StockPriceSnapshotRepository stockPriceSnapshotRepository;
-    private final AppUserRepository appUserRepository;
     private final CurrentUserService currentUserService;
     private final StockService stockService;
 
     @Transactional
     public PriceResponse upsert(Long stockId, PriceUpsertRequest request) {
-        Long userId = currentUserService.getCurrentUser().id();
-        AppUser user = appUserRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        Long userId = currentUserService.getCurrentUserId();
         Stock stock = stockService.findEntityById(stockId);
 
         StockPriceSnapshot snapshot = stockPriceSnapshotRepository.findByUser_IdAndStock_Id(userId, stockId)
             .orElseGet(StockPriceSnapshot::new);
-        snapshot.setUser(user);
+        snapshot.setUser(currentUserService.getCurrentAppUser());
         snapshot.setStock(stock);
         snapshot.setPrice(request.price());
         snapshot.setPricedAt(request.pricedAt() == null ? OffsetDateTime.now() : request.pricedAt());
@@ -46,7 +41,7 @@ public class StockPriceService {
 
     @Transactional(readOnly = true)
     public List<PriceResponse> findAll() {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         return stockPriceSnapshotRepository.findByUser_IdOrderByStock_CodeAsc(userId)
             .stream()
             .map(this::toResponse)
@@ -55,7 +50,7 @@ public class StockPriceService {
 
     @Transactional(readOnly = true)
     public PriceResponse findByStockId(Long stockId) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         return stockPriceSnapshotRepository.findByUser_IdAndStock_Id(userId, stockId)
             .map(this::toResponse)
             .orElseThrow(() -> new ResourceNotFoundException("Price snapshot not found"));

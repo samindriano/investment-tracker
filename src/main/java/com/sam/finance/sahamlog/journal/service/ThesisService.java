@@ -8,8 +8,6 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.sam.finance.sahamlog.auth.domain.AppUser;
-import com.sam.finance.sahamlog.auth.repository.AppUserRepository;
 import com.sam.finance.sahamlog.auth.service.CurrentUserService;
 import com.sam.finance.sahamlog.journal.domain.InvestmentThesis;
 import com.sam.finance.sahamlog.journal.domain.ThesisReview;
@@ -20,7 +18,6 @@ import com.sam.finance.sahamlog.journal.dto.ThesisReviewResponse;
 import com.sam.finance.sahamlog.journal.dto.ThesisSummaryResponse;
 import com.sam.finance.sahamlog.journal.repository.InvestmentThesisRepository;
 import com.sam.finance.sahamlog.journal.repository.ThesisReviewRepository;
-import com.sam.finance.sahamlog.portfolio.domain.Stock;
 import com.sam.finance.sahamlog.portfolio.service.StockService;
 import com.sam.finance.sahamlog.shared.exception.ConflictException;
 import com.sam.finance.sahamlog.shared.exception.ResourceNotFoundException;
@@ -33,90 +30,90 @@ public class ThesisService {
 
     private final InvestmentThesisRepository investmentThesisRepository;
     private final ThesisReviewRepository thesisReviewRepository;
-    private final AppUserRepository appUserRepository;
     private final CurrentUserService currentUserService;
     private final StockService stockService;
+    private final ThesisMapper thesisMapper;
 
     @Transactional
     public ThesisResponse create(ThesisRequest request) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         if (investmentThesisRepository.existsByUser_IdAndStock_Id(userId, request.stockId())) {
             throw new ConflictException("A thesis already exists for this stock");
         }
 
         InvestmentThesis thesis = new InvestmentThesis();
-        applyRequest(thesis, request, userId);
-        return toResponse(investmentThesisRepository.save(thesis));
+        applyRequest(thesis, request);
+        return thesisMapper.toResponse(investmentThesisRepository.save(thesis));
     }
 
     @Transactional(readOnly = true)
     public List<ThesisResponse> findAll() {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         return investmentThesisRepository.findByUser_IdOrderByStock_CodeAsc(userId)
             .stream()
-            .map(this::toResponse)
+            .map(thesisMapper::toResponse)
             .toList();
     }
 
     @Transactional(readOnly = true)
     public ThesisResponse findById(Long id) {
-        Long userId = currentUserService.getCurrentUser().id();
-        return toResponse(findOwnedThesis(id, userId));
+        Long userId = currentUserService.getCurrentUserId();
+        return thesisMapper.toResponse(findOwnedThesis(id, userId));
     }
 
     @Transactional
     public ThesisResponse update(Long id, ThesisRequest request) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         InvestmentThesis thesis = findOwnedThesis(id, userId);
         if (!thesis.getStock().getId().equals(request.stockId()) && investmentThesisRepository.existsByUser_IdAndStock_Id(userId, request.stockId())) {
             throw new ConflictException("A thesis already exists for this stock");
         }
 
-        applyRequest(thesis, request, userId);
-        return toResponse(investmentThesisRepository.save(thesis));
+        applyRequest(thesis, request);
+        return thesisMapper.toResponse(investmentThesisRepository.save(thesis));
     }
 
     @Transactional
     public void delete(Long id) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         investmentThesisRepository.delete(findOwnedThesis(id, userId));
     }
 
     @Transactional
     public ThesisReviewResponse createReview(Long thesisId, ThesisReviewRequest request) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         ThesisReview review = new ThesisReview();
         review.setThesis(findOwnedThesis(thesisId, userId));
         applyReviewRequest(review, request);
-        return toReviewResponse(thesisReviewRepository.save(review));
+        return thesisMapper.toReviewResponse(thesisReviewRepository.save(review));
     }
 
     @Transactional(readOnly = true)
     public Page<ThesisReviewResponse> findReviews(Long thesisId, Pageable pageable) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         findOwnedThesis(thesisId, userId);
         return thesisReviewRepository.findByThesis_IdAndThesis_User_IdOrderByReviewDateDescIdDesc(thesisId, userId, pageable)
-            .map(this::toReviewResponse);
+            .map(thesisMapper::toReviewResponse);
     }
 
     @Transactional
     public ThesisReviewResponse updateReview(Long thesisId, Long reviewId, ThesisReviewRequest request) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         findOwnedThesis(thesisId, userId);
         ThesisReview review = findOwnedReview(reviewId, thesisId, userId);
         applyReviewRequest(review, request);
-        return toReviewResponse(thesisReviewRepository.save(review));
+        return thesisMapper.toReviewResponse(thesisReviewRepository.save(review));
     }
 
     @Transactional
     public void deleteReview(Long thesisId, Long reviewId) {
-        Long userId = currentUserService.getCurrentUser().id();
+        Long userId = currentUserService.getCurrentUserId();
         thesisReviewRepository.delete(findOwnedReview(reviewId, thesisId, userId));
     }
 
     @Transactional(readOnly = true)
     public ThesisSummaryResponse getSummary() {
-        return getSummaryForUser(currentUserService.getCurrentUser().id());
+        return getSummaryForUser(currentUserService.getCurrentUserId());
     }
 
     @Transactional(readOnly = true)
@@ -128,12 +125,9 @@ public class ThesisService {
         return new ThesisSummaryResponse(total, active, invalidated, reviewsLast30Days);
     }
 
-    private void applyRequest(InvestmentThesis thesis, ThesisRequest request, Long userId) {
-        AppUser user = appUserRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-        Stock stock = stockService.findEntityById(request.stockId());
-        thesis.setUser(user);
-        thesis.setStock(stock);
+    private void applyRequest(InvestmentThesis thesis, ThesisRequest request) {
+        thesis.setUser(currentUserService.getCurrentAppUser());
+        thesis.setStock(stockService.findEntityById(request.stockId()));
         thesis.setThesis(request.thesis());
         thesis.setRisks(request.risks());
         thesis.setInvalidationCondition(request.invalidationCondition());
@@ -159,28 +153,5 @@ public class ThesisService {
             .filter(review -> review.getThesis().getId().equals(thesisId))
             .filter(review -> review.getThesis().getUser().getId().equals(userId))
             .orElseThrow(() -> new ResourceNotFoundException("Thesis review not found"));
-    }
-
-    private ThesisResponse toResponse(InvestmentThesis thesis) {
-        return new ThesisResponse(
-            thesis.getId(),
-            thesis.getStock().getId(),
-            thesis.getStock().getCode(),
-            thesis.getStock().getName(),
-            thesis.getThesis(),
-            thesis.getRisks(),
-            thesis.getInvalidationCondition(),
-            thesis.getHoldingPeriod(),
-            thesis.getConfidenceScore(),
-            thesis.getEmotionTag());
-    }
-
-    private ThesisReviewResponse toReviewResponse(ThesisReview review) {
-        return new ThesisReviewResponse(
-            review.getId(),
-            review.getReviewDate(),
-            review.getStillValid(),
-            review.getAction(),
-            review.getLesson());
     }
 }
