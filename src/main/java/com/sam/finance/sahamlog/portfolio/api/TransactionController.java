@@ -1,9 +1,10 @@
 package com.sam.finance.sahamlog.portfolio.api;
 
 import java.time.LocalDate;
+import java.util.List;
 
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -22,6 +23,7 @@ import com.sam.finance.sahamlog.portfolio.dto.TransactionFilter;
 import com.sam.finance.sahamlog.portfolio.dto.TransactionRequest;
 import com.sam.finance.sahamlog.portfolio.dto.TransactionResponse;
 import com.sam.finance.sahamlog.portfolio.service.TransactionService;
+import com.sam.finance.sahamlog.shared.dto.PageableFactory;
 import com.sam.finance.sahamlog.shared.dto.PageResponse;
 
 import jakarta.validation.Valid;
@@ -31,6 +33,10 @@ import lombok.RequiredArgsConstructor;
 @RequestMapping("/api/v1/transactions")
 @RequiredArgsConstructor
 public class TransactionController {
+
+    private static final List<Sort.Order> DEFAULT_SORT = List.of(
+        Sort.Order.desc("transactionDate"),
+        Sort.Order.desc("id"));
 
     private final TransactionService transactionService;
 
@@ -58,9 +64,10 @@ public class TransactionController {
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateFrom,
         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dateTo,
         @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "20") int size) {
+        @RequestParam(defaultValue = "20") int size,
+        @RequestParam(required = false) List<String> sort) {
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = PageableFactory.create(page, size, sort, DEFAULT_SORT);
         return PageResponse.from(transactionService.findPage(new TransactionFilter(stockCode, type, dateFrom, dateTo), pageable));
     }
 }

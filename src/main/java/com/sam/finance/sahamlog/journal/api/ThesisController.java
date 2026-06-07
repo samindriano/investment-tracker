@@ -2,7 +2,7 @@ package com.sam.finance.sahamlog.journal.api;
 
 import java.util.List;
 
-import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +21,7 @@ import com.sam.finance.sahamlog.journal.dto.ThesisReviewRequest;
 import com.sam.finance.sahamlog.journal.dto.ThesisReviewResponse;
 import com.sam.finance.sahamlog.journal.dto.ThesisSummaryResponse;
 import com.sam.finance.sahamlog.journal.service.ThesisService;
+import com.sam.finance.sahamlog.shared.dto.PageableFactory;
 import com.sam.finance.sahamlog.shared.dto.PageResponse;
 
 import jakarta.validation.Valid;
@@ -30,6 +31,10 @@ import lombok.RequiredArgsConstructor;
 @RequestMapping("/api/v1/theses")
 @RequiredArgsConstructor
 public class ThesisController {
+
+    private static final List<Sort.Order> DEFAULT_REVIEW_SORT = List.of(
+        Sort.Order.desc("reviewDate"),
+        Sort.Order.desc("id"));
 
     private final ThesisService thesisService;
 
@@ -70,9 +75,10 @@ public class ThesisController {
     public PageResponse<ThesisReviewResponse> findReviews(
         @PathVariable Long id,
         @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "20") int size) {
+        @RequestParam(defaultValue = "20") int size,
+        @RequestParam(required = false) List<String> sort) {
 
-        return PageResponse.from(thesisService.findReviews(id, PageRequest.of(page, size)));
+        return PageResponse.from(thesisService.findReviews(id, PageableFactory.create(page, size, sort, DEFAULT_REVIEW_SORT)));
     }
 
     @PutMapping("/{id}/reviews/{reviewId}")

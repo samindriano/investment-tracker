@@ -9,7 +9,3 @@ spring:
       ddl-auto: create-drop
   flyway:
     enabled: false
-
-springdoc:
-  swagger-ui:
-    enabled: false

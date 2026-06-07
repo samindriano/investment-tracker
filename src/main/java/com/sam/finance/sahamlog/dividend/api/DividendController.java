@@ -1,6 +1,8 @@
 package com.sam.finance.sahamlog.dividend.api;
 
-import org.springframework.data.domain.PageRequest;
+import java.util.List;
+
+import org.springframework.data.domain.Sort;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -17,6 +19,7 @@ import com.sam.finance.sahamlog.dividend.dto.DividendRequest;
 import com.sam.finance.sahamlog.dividend.dto.DividendResponse;
 import com.sam.finance.sahamlog.dividend.dto.DividendSummaryResponse;
 import com.sam.finance.sahamlog.dividend.service.DividendService;
+import com.sam.finance.sahamlog.shared.dto.PageableFactory;
 import com.sam.finance.sahamlog.shared.dto.PageResponse;
 
 import jakarta.validation.Valid;
@@ -28,6 +31,10 @@ import org.springframework.http.HttpStatus;
 @RequestMapping("/api/v1/dividends")
 @RequiredArgsConstructor
 public class DividendController {
+
+    private static final List<Sort.Order> DEFAULT_SORT = List.of(
+        Sort.Order.desc("paymentDate"),
+        Sort.Order.desc("id"));
 
     private final DividendService dividendService;
 
@@ -42,9 +49,10 @@ public class DividendController {
         @RequestParam(required = false) String stockCode,
         @RequestParam(required = false) Integer year,
         @RequestParam(defaultValue = "0") int page,
-        @RequestParam(defaultValue = "20") int size) {
+        @RequestParam(defaultValue = "20") int size,
+        @RequestParam(required = false) List<String> sort) {
 
-        return PageResponse.from(dividendService.findAll(stockCode, year, PageRequest.of(page, size)));
+        return PageResponse.from(dividendService.findAll(stockCode, year, PageableFactory.create(page, size, sort, DEFAULT_SORT)));
     }
 
     @GetMapping("/{id}")
