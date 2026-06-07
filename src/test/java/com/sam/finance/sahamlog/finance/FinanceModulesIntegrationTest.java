@@ -189,6 +189,59 @@ class FinanceModulesIntegrationTest {
             .andExpect(status().isOk());
     }
 
+    @Test
+    void shouldRejectInvalidWatchlistBands() throws Exception {
+        String token = registerAndGetToken("watchlist-invalid@example.com");
+        long stockId = createStock(token, "BBRI", "Bank Rakyat Indonesia", "Banking");
+
+        mockMvc.perform(post("/api/v1/watchlist")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "stockId": %d,
+                      "fairPrice": 100.00,
+                      "cheapPrice": 110.00,
+                      "veryCheapPrice": 90.00,
+                      "expensivePrice": 120.00,
+                      "notes": "invalid order"
+                    }
+                    """.formatted(stockId)))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.message").value("Watchlist price bands must be ordered very cheap <= cheap <= fair <= expensive"));
+    }
+
+    @Test
+    void shouldRejectDuplicateThesisForSameStock() throws Exception {
+        String token = registerAndGetToken("thesis-duplicate@example.com");
+        long stockId = createStock(token, "BMRI", "Bank Mandiri", "Banking");
+
+        String payload = """
+            {
+              "stockId": %d,
+              "thesis": "First thesis",
+              "risks": "Risk",
+              "invalidationCondition": "Invalidation",
+              "holdingPeriod": "3 years",
+              "confidenceScore": 7,
+              "emotionTag": "steady"
+            }
+            """.formatted(stockId);
+
+        mockMvc.perform(post("/api/v1/theses")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload))
+            .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/v1/theses")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(payload.replace("First thesis", "Second thesis")))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("A thesis already exists for this stock"));
+    }
+
     private String registerAndGetToken(String email) throws Exception {
         MvcResult result = mockMvc.perform(post("/api/v1/auth/register")
                 .contentType(MediaType.APPLICATION_JSON)

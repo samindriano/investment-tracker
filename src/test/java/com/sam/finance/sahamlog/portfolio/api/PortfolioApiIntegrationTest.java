@@ -236,6 +236,32 @@ class PortfolioApiIntegrationTest {
     }
 
     @Test
+    void shouldApplyDefaultAndExplicitTransactionSorting() throws Exception {
+        String token = registerAndGetToken("sort@example.com");
+        long stockId = createStock(token, "TLKM", "Telkom Indonesia", "Telecom");
+
+        createTransaction(token, stockId, "BUY", "2026-01-01", 1, "100.00", "0.00");
+        createTransaction(token, stockId, "BUY", "2026-01-03", 1, "300.00", "0.00");
+        createTransaction(token, stockId, "BUY", "2026-01-02", 1, "200.00", "0.00");
+
+        mockMvc.perform(get("/api/v1/transactions")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].transactionDate").value("2026-01-03"))
+            .andExpect(jsonPath("$.items[1].transactionDate").value("2026-01-02"))
+            .andExpect(jsonPath("$.items[2].transactionDate").value("2026-01-01"));
+
+        mockMvc.perform(get("/api/v1/transactions")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .param("sort", "transactionDate,asc")
+                .param("sort", "id,asc"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].transactionDate").value("2026-01-01"))
+            .andExpect(jsonPath("$.items[1].transactionDate").value("2026-01-02"))
+            .andExpect(jsonPath("$.items[2].transactionDate").value("2026-01-03"));
+    }
+
+    @Test
     void shouldOverwriteManualPrice() throws Exception {
         String token = registerAndGetToken("price@example.com");
         long stockId = createStock(token, "ASII", "Astra", "Industrial");

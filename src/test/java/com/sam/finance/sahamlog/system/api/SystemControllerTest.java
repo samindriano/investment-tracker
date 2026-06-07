@@ -26,4 +26,11 @@ class SystemControllerTest {
             .andExpect(jsonPath("$.status").value("ok"))
             .andExpect(jsonPath("$.service").value("sahamlog"));
     }
+
+    @Test
+    void apiDocsShouldBePubliclyAccessibleInTestProfile() throws Exception {
+        mockMvc.perform(get("/api-docs"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.openapi").exists());
+    }
 }
