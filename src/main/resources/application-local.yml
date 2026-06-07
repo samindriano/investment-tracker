@@ -1,0 +1,7 @@
+app:
+  stock-seed:
+    enabled: true
+
+logging:
+  level:
+    com.sam.finance.sahamlog.shared.logging: INFO

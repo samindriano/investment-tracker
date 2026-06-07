@@ -1,6 +1,8 @@
 spring:
   application:
     name: sahamlog
+  profiles:
+    default: local
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/sahamlog}
     username: ${DB_USERNAME:postgres}
@@ -23,6 +25,8 @@ app:
     jwt:
       secret: ${JWT_SECRET:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       expiration-seconds: ${JWT_EXPIRATION_SECONDS:86400}
+  stock-seed:
+    enabled: false
 
 management:
   endpoints:
@@ -37,3 +41,9 @@ management:
 server:
   error:
     include-message: always
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
