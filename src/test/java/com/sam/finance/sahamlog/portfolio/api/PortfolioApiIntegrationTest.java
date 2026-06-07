@@ -22,9 +22,16 @@ import org.springframework.test.web.servlet.MvcResult;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sam.finance.sahamlog.auth.repository.AppUserRepository;
+import com.sam.finance.sahamlog.dividend.repository.DividendRepository;
+import com.sam.finance.sahamlog.journal.repository.InvestmentThesisRepository;
+import com.sam.finance.sahamlog.journal.repository.ThesisReviewRepository;
 import com.sam.finance.sahamlog.portfolio.repository.StockPriceSnapshotRepository;
 import com.sam.finance.sahamlog.portfolio.repository.StockRepository;
 import com.sam.finance.sahamlog.portfolio.repository.TransactionEntryRepository;
+import com.sam.finance.sahamlog.reporting.repository.DividendMonthlySnapshotRepository;
+import com.sam.finance.sahamlog.reporting.repository.PortfolioDailySnapshotRepository;
+import com.sam.finance.sahamlog.reporting.repository.ThesisStatusSnapshotRepository;
+import com.sam.finance.sahamlog.watchlist.repository.WatchlistItemRepository;
 
 @ActiveProfiles("test")
 @SpringBootTest
@@ -49,10 +56,38 @@ class PortfolioApiIntegrationTest {
     @Autowired
     private AppUserRepository appUserRepository;
 
+    @Autowired
+    private DividendRepository dividendRepository;
+
+    @Autowired
+    private WatchlistItemRepository watchlistItemRepository;
+
+    @Autowired
+    private InvestmentThesisRepository investmentThesisRepository;
+
+    @Autowired
+    private ThesisReviewRepository thesisReviewRepository;
+
+    @Autowired
+    private PortfolioDailySnapshotRepository portfolioDailySnapshotRepository;
+
+    @Autowired
+    private DividendMonthlySnapshotRepository dividendMonthlySnapshotRepository;
+
+    @Autowired
+    private ThesisStatusSnapshotRepository thesisStatusSnapshotRepository;
+
     @BeforeEach
     void cleanDatabase() {
+        thesisReviewRepository.deleteAll();
+        investmentThesisRepository.deleteAll();
+        watchlistItemRepository.deleteAll();
+        dividendRepository.deleteAll();
         stockPriceSnapshotRepository.deleteAll();
         transactionEntryRepository.deleteAll();
+        portfolioDailySnapshotRepository.deleteAll();
+        dividendMonthlySnapshotRepository.deleteAll();
+        thesisStatusSnapshotRepository.deleteAll();
         stockRepository.deleteAll();
         appUserRepository.deleteAll();
     }
@@ -183,9 +218,9 @@ class PortfolioApiIntegrationTest {
                 .param("dateFrom", "2026-01-01")
                 .param("dateTo", "2026-01-31"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.length()").value(1))
-            .andExpect(jsonPath("$[0].stockCode").value("BBCA"))
-            .andExpect(jsonPath("$[0].quantityLot").value(2));
+            .andExpect(jsonPath("$.items.length()").value(1))
+            .andExpect(jsonPath("$.items[0].stockCode").value("BBCA"))
+            .andExpect(jsonPath("$.items[0].quantityLot").value(2));
 
         mockMvc.perform(get("/api/v1/prices/" + bbcaId)
                 .header(HttpHeaders.AUTHORIZATION, bearer(tokenOne)))
@@ -212,6 +247,58 @@ class PortfolioApiIntegrationTest {
                 .header(HttpHeaders.AUTHORIZATION, bearer(token)))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.price").value(123.45));
+    }
+
+    @Test
+    void shouldUpdateAndDeleteTransaction() throws Exception {
+        String token = registerAndGetToken("mutate@example.com");
+        long stockId = createStock(token, "ADRO", "Adaro", "Mining");
+
+        long txId = createTransactionReturningId(token, stockId, "BUY", "2026-01-01", 2, "100.00", "0.00");
+
+        mockMvc.perform(put("/api/v1/transactions/" + txId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "stockId": %d,
+                      "type": "BUY",
+                      "transactionDate": "2026-01-01",
+                      "quantityLot": 3,
+                      "price": 150.00,
+                      "fee": 0.00,
+                      "notes": "edited"
+                    }
+                    """.formatted(stockId)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.quantityLot").value(3));
+
+        mockMvc.perform(get("/api/v1/portfolio/holdings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].totalLot").value(3))
+            .andExpect(jsonPath("$[0].averagePrice").value(150.00));
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/transactions/" + txId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+            .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/v1/portfolio/holdings")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
+    void shouldRejectStockDeletionWhenReferenced() throws Exception {
+        String token = registerAndGetToken("stock-delete@example.com");
+        long stockId = createStock(token, "PGAS", "Perusahaan Gas Negara", "Energy");
+        createTransaction(token, stockId, "BUY", "2026-01-01", 1, "100.00", "0.00");
+
+        mockMvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete("/api/v1/stocks/" + stockId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(token)))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.message").value("Stock cannot be deleted because it is already referenced by portfolio data"));
     }
 
     private String registerAndGetToken(String email) throws Exception {
@@ -278,6 +365,36 @@ class PortfolioApiIntegrationTest {
                     }
                     """.formatted(stockId, type, date, quantityLot, price, fee)))
             .andExpect(status().isCreated());
+    }
+
+    private long createTransactionReturningId(
+        String token,
+        long stockId,
+        String type,
+        String date,
+        int quantityLot,
+        String price,
+        String fee) throws Exception {
+
+        MvcResult result = mockMvc.perform(post("/api/v1/transactions")
+                .header(HttpHeaders.AUTHORIZATION, bearer(token))
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {
+                      "stockId": %d,
+                      "type": "%s",
+                      "transactionDate": "%s",
+                      "quantityLot": %d,
+                      "price": %s,
+                      "fee": %s,
+                      "notes": "test"
+                    }
+                    """.formatted(stockId, type, date, quantityLot, price, fee)))
+            .andExpect(status().isCreated())
+            .andReturn();
+
+        Map<String, Object> response = objectMapper.readValue(result.getResponse().getContentAsString(), new TypeReference<>() {});
+        return ((Number) response.get("id")).longValue();
     }
 
     private void createPrice(String token, long stockId, String price) throws Exception {

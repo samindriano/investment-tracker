@@ -1,4 +1,4 @@
-package com.sam.finance.sahamlog.portfolio.api;
+package com.sam.finance.sahamlog.watchlist.api;
 
 import java.util.List;
 
@@ -13,50 +13,44 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.sam.finance.sahamlog.portfolio.dto.StockRequest;
-import com.sam.finance.sahamlog.portfolio.dto.StockResponse;
-import com.sam.finance.sahamlog.portfolio.dto.StockSeedSummary;
-import com.sam.finance.sahamlog.portfolio.service.StockService;
+import com.sam.finance.sahamlog.watchlist.dto.WatchlistRequest;
+import com.sam.finance.sahamlog.watchlist.dto.WatchlistResponse;
+import com.sam.finance.sahamlog.watchlist.service.WatchlistService;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 
 @RestController
-@RequestMapping("/api/v1/stocks")
+@RequestMapping("/api/v1/watchlist")
 @RequiredArgsConstructor
-public class StockController {
+public class WatchlistController {
 
-    private final StockService stockService;
+    private final WatchlistService watchlistService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public StockResponse create(@Valid @RequestBody StockRequest request) {
-        return stockService.create(request);
+    public WatchlistResponse create(@Valid @RequestBody WatchlistRequest request) {
+        return watchlistService.create(request);
     }
 
     @GetMapping
-    public List<StockResponse> findAll() {
-        return stockService.findAll();
+    public List<WatchlistResponse> findAll() {
+        return watchlistService.findAll();
     }
 
     @GetMapping("/{id}")
-    public StockResponse findById(@PathVariable Long id) {
-        return stockService.findById(id);
+    public WatchlistResponse findById(@PathVariable Long id) {
+        return watchlistService.findById(id);
     }
 
     @PutMapping("/{id}")
-    public StockResponse update(@PathVariable Long id, @Valid @RequestBody StockRequest request) {
-        return stockService.update(id, request);
+    public WatchlistResponse update(@PathVariable Long id, @Valid @RequestBody WatchlistRequest request) {
+        return watchlistService.update(id, request);
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {
-        stockService.delete(id);
-    }
-
-    @PostMapping("/seed")
-    public StockSeedSummary seedDefaults() {
-        return stockService.seedDefaults();
+        watchlistService.delete(id);
     }
 }

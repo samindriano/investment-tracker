@@ -28,7 +28,11 @@ public class DashboardService {
 
     @Transactional(readOnly = true)
     public DashboardSummaryResponse getSummary() {
-        Long userId = currentUserService.getCurrentUser().id();
+        return getSummaryForUser(currentUserService.getCurrentUser().id());
+    }
+
+    @Transactional(readOnly = true)
+    public DashboardSummaryResponse getSummaryForUser(Long userId) {
         List<PositionSnapshot> positions = portfolioService.calculatePositions(userId);
         Map<Long, StockPriceSnapshot> pricesByStockId = stockPriceService.findSnapshotMapByUserId(userId);
 

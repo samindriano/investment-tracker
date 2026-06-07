@@ -12,4 +12,6 @@ public interface StockPriceSnapshotRepository extends JpaRepository<StockPriceSn
     List<StockPriceSnapshot> findByUser_IdOrderByStock_CodeAsc(Long userId);
 
     Optional<StockPriceSnapshot> findByUser_IdAndStock_Id(Long userId, Long stockId);
+
+    boolean existsByStock_Id(Long stockId);
 }

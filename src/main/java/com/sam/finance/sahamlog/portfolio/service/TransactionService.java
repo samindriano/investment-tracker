@@ -1,7 +1,11 @@
 package com.sam.finance.sahamlog.portfolio.service;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,10 +43,6 @@ public class TransactionService {
             .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         Stock stock = stockService.findEntityById(request.stockId());
 
-        if (request.type() == TransactionType.SELL) {
-            validateSellPosition(userId, stock.getId(), request.quantityLot());
-        }
-
         TransactionEntry entry = new TransactionEntry();
         entry.setUser(user);
         entry.setStock(stock);
@@ -53,7 +53,21 @@ public class TransactionService {
         entry.setFee(request.fee());
         entry.setNotes(request.notes());
 
+        validateCandidateState(userId, entry, null, false);
         return toResponse(transactionEntryRepository.save(entry));
+    }
+
+    @Transactional(readOnly = true)
+    public Page<TransactionResponse> findPage(TransactionFilter filter, Pageable pageable) {
+        Long userId = currentUserService.getCurrentUser().id();
+        Specification<TransactionEntry> specification = hasUserId(userId)
+            .and(hasStockCode(filter.stockCode()))
+            .and(hasType(filter.type()))
+            .and(hasDateFrom(filter.dateFrom()))
+            .and(hasDateTo(filter.dateTo()));
+
+        return transactionEntryRepository.findAll(specification, pageable)
+            .map(this::toResponse);
     }
 
     @Transactional(readOnly = true)
@@ -78,17 +92,83 @@ public class TransactionService {
             .toList();
     }
 
+    @Transactional
+    public TransactionResponse update(Long id, TransactionRequest request) {
+        Long userId = currentUserService.getCurrentUser().id();
+        TransactionEntry entry = findOwnedTransaction(id, userId);
+        Long originalStockId = entry.getStock().getId();
+
+        entry.setStock(stockService.findEntityById(request.stockId()));
+        entry.setType(request.type());
+        entry.setTransactionDate(request.transactionDate());
+        entry.setQuantityLot(request.quantityLot());
+        entry.setPrice(request.price());
+        entry.setFee(request.fee());
+        entry.setNotes(request.notes());
+
+        validateCandidateState(userId, entry, originalStockId, false);
+        return toResponse(transactionEntryRepository.save(entry));
+    }
+
+    @Transactional
+    public void delete(Long id) {
+        Long userId = currentUserService.getCurrentUser().id();
+        TransactionEntry entry = findOwnedTransaction(id, userId);
+        validateCandidateState(userId, entry, entry.getStock().getId(), true);
+        transactionEntryRepository.delete(entry);
+    }
+
     @Transactional(readOnly = true)
     public List<TransactionEntry> findUserTransactionsOrdered(Long userId) {
         return transactionEntryRepository.findByUser_IdOrderByStock_CodeAscTransactionDateAscIdAsc(userId);
     }
 
-    private void validateSellPosition(Long userId, Long stockId, Integer sellLot) {
-        List<TransactionEntry> transactions = transactionEntryRepository.findByUser_IdAndStock_IdOrderByTransactionDateAscIdAsc(userId, stockId);
-        Stock stock = stockService.findEntityById(stockId);
-        PositionSnapshot position = positionCalculator.calculate(stock, transactions);
-        if (sellLot > position.totalLot()) {
-            throw new BusinessRuleViolationException("Sell quantity exceeds current holdings");
+    private TransactionEntry findOwnedTransaction(Long id, Long userId) {
+        return transactionEntryRepository.findByIdAndUser_Id(id, userId)
+            .orElseThrow(() -> new ResourceNotFoundException("Transaction not found"));
+    }
+
+    private void validateCandidateState(Long userId, TransactionEntry candidate, Long originalStockId, boolean deleting) {
+        java.util.LinkedHashSet<Long> affectedStockIds = new java.util.LinkedHashSet<>();
+        if (originalStockId != null) {
+            affectedStockIds.add(originalStockId);
+        }
+        affectedStockIds.add(candidate.getStock().getId());
+
+        for (Long stockId : affectedStockIds) {
+            List<TransactionEntry> transactions = transactionEntryRepository.findByUser_IdAndStock_IdOrderByTransactionDateAscIdAsc(userId, stockId)
+                .stream()
+                .filter(entry -> !Objects.equals(entry.getId(), candidate.getId()))
+                .collect(java.util.stream.Collectors.toCollection(java.util.ArrayList::new));
+
+            if (!deleting && stockId.equals(candidate.getStock().getId())) {
+                transactions.add(candidate);
+            }
+
+            transactions.sort((left, right) -> {
+                int compareDate = left.getTransactionDate().compareTo(right.getTransactionDate());
+                if (compareDate != 0) {
+                    return compareDate;
+                }
+
+                Long leftId = left.getId();
+                Long rightId = right.getId();
+                if (leftId == null && rightId == null) {
+                    return 0;
+                }
+                if (leftId == null) {
+                    return 1;
+                }
+                if (rightId == null) {
+                    return -1;
+                }
+                return leftId.compareTo(rightId);
+            });
+
+            if (!transactions.isEmpty()) {
+                Stock stock = stockService.findEntityById(stockId);
+                positionCalculator.calculate(stock, transactions);
+            }
         }
     }
 

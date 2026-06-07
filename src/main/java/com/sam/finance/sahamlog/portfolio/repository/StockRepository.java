@@ -11,4 +11,6 @@ public interface StockRepository extends JpaRepository<Stock, Long> {
     boolean existsByCodeIgnoreCase(String code);
 
     Optional<Stock> findByCodeIgnoreCase(String code);
+
+    Optional<Stock> findById(Long id);
 }

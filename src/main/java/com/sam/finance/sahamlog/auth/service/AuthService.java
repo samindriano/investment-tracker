@@ -9,6 +9,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.sam.finance.sahamlog.auth.domain.AppUser;
 import com.sam.finance.sahamlog.auth.dto.AuthRequest;
+import com.sam.finance.sahamlog.auth.dto.AuthMeResponse;
 import com.sam.finance.sahamlog.auth.dto.AuthResponse;
 import com.sam.finance.sahamlog.auth.dto.UserSummary;
 import com.sam.finance.sahamlog.auth.repository.AppUserRepository;
@@ -24,6 +25,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final CurrentUserService currentUserService;
 
     @Transactional
     public AuthResponse register(AuthRequest request) {
@@ -56,6 +58,12 @@ public class AuthService {
             .orElseThrow(() -> new BadCredentialsException("Invalid email or password"));
 
         return buildAuthResponse(authenticatedUser);
+    }
+
+    @Transactional(readOnly = true)
+    public AuthMeResponse me() {
+        AuthenticatedUser user = currentUserService.getCurrentUser();
+        return new AuthMeResponse(user.id(), user.email());
     }
 
     private AuthResponse buildAuthResponse(AuthenticatedUser user) {
