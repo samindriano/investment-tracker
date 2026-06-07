@@ -78,17 +78,28 @@ Do not organize the whole codebase primarily by technical layer across all domai
 - Prefer clear, boring code over highly generic code.
 - Keep security simple at first, but do not leave accidental open write endpoints.
 
-## Near-Term Build Order
+## Implemented Milestones
 
-Build features in this order unless there is a strong reason to change it:
+Implemented:
 
-1. stock master data
-2. transaction entry create/list flow
-3. holdings and average price calculation
-4. unrealized gain/loss dashboard summary
-5. dividend tracking
-6. watchlist valuation
-7. investment thesis journal
+1. local JWT auth
+2. stock master data CRUD
+3. transaction create/list/update/delete flow
+4. holdings and average price calculation
+5. unrealized gain/loss dashboard summary
+6. dividend tracking
+7. watchlist valuation
+8. investment thesis journal
+9. CSV exports and report endpoints
+10. frontend scaffold under `frontend/`
+
+Recommended next build order from here:
+
+1. tighten pagination and sorting defaults across all list endpoints
+2. improve snapshot scheduling/report retention
+3. wire the frontend scaffold to authenticated mutations
+4. add richer charts and portfolio review UX
+5. add import flows and more advanced analytics
 
 ## Environment Notes
 
